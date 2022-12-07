@@ -22,12 +22,12 @@ func Keccak256(data []byte) []byte {
 func (i *Index) TxWait(ctx context.Context, hash string) (uint64, error) {
 	h := common.HexToHash(hash)
 
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(15 * time.Second)
 
 	for {
 		select {
 		case <-ticker.C:
-			receipt, err := i.client.TransactionReceipt(ctx, h)
+			receipt, err := i.ethClient.TransactionReceipt(ctx, h)
 
 			switch {
 			case err != nil && !errors.Is(err, ethereum.NotFound):
@@ -45,7 +45,7 @@ func (i *Index) TxWait(ctx context.Context, hash string) (uint64, error) {
 func (i *Index) GetTxStatus(ctx context.Context, hash string) (uint64, error) {
 	h := common.HexToHash(hash)
 
-	receipt, err := i.client.TransactionReceipt(ctx, h)
+	receipt, err := i.ethClient.TransactionReceipt(ctx, h)
 	if err != nil {
 		if errors.Is(err, ethereum.NotFound) {
 			return 0, errors.ErrIsNotExist

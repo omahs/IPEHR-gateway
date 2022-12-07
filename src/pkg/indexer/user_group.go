@@ -65,7 +65,7 @@ func (i *Index) UserGroupCreate(ctx context.Context, groupID *uuid.UUID, idEncr,
 		return "", fmt.Errorf("ehrIndex.UserGroupCreate error: %w", err)
 	}
 
-	return tx.Hash().Hex(), nil
+	return i.send(ctx, tx)
 }
 
 func (i *Index) UserGroupGetByID(ctx context.Context, userID string, groupID *uuid.UUID) (*userModel.UserGroup, error) {

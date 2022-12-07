@@ -107,10 +107,10 @@ func requestWait(userID, accessToken, requestID, baseURL string, client *http.Cl
 		request.Header.Set("Authorization", "Bearer "+accessToken)
 	}
 
-	timeout := time.Now().Add(1 * time.Minute)
+	timeout := time.Now().Add(3 * time.Minute)
 
 	for {
-		time.Sleep(2 * time.Second)
+		time.Sleep(5 * time.Second)
 
 		if time.Now().After(timeout) {
 			return errors.ErrTimeout

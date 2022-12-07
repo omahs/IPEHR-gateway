@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"log"
+	"net/http"
 	"os"
 	"strings"
 
@@ -26,7 +27,7 @@ func main() {
 		panic(err)
 	}
 
-	ehtClient, err := ethclient.Dial(cfg.Contract.Endpoint)
+	ethClient, err := ethclient.Dial(cfg.Contract.Endpoint)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -34,8 +35,10 @@ func main() {
 	index := indexer.New(
 		cfg.Contract.Address,
 		cfg.Contract.PrivKeyPath,
-		ehtClient,
+		cfg.Contract.Endpoint,
 		cfg.Contract.GasTipCap,
+		http.DefaultClient,
+		ethClient,
 	)
 
 	key, err := os.ReadFile(cfg.Contract.PrivKeyPath)

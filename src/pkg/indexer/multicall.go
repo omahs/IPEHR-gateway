@@ -12,6 +12,7 @@ import (
 )
 
 type MultiCallTx struct {
+	ctx   context.Context
 	index *Index
 	kinds []uint8
 	data  [][]byte
@@ -33,7 +34,7 @@ func (i *Index) MultiCallTxNew(ctx context.Context, pk *[32]byte) (*MultiCallTx,
 
 	nonce.Add(nonce, big.NewInt(1))
 
-	return &MultiCallTx{index: i, nonce: nonce}, nil
+	return &MultiCallTx{ctx: ctx, index: i, nonce: nonce}, nil
 }
 
 func (m *MultiCallTx) Add(kind uint8, packed []byte) {
@@ -60,7 +61,7 @@ func (m *MultiCallTx) Commit() (string, error) {
 		return "", fmt.Errorf("ehrIndex.Multicall error: %w", err)
 	}
 
-	return tx.Hash().Hex(), nil
+	return m.index.send(m.ctx, tx)
 }
 
 func (i *Index) SendSingle(ctx context.Context, data []byte) (string, error) {
@@ -69,5 +70,5 @@ func (i *Index) SendSingle(ctx context.Context, data []byte) (string, error) {
 		return "", fmt.Errorf("Multicall error: %w", err)
 	}
 
-	return tx.Hash().String(), nil
+	return i.send(ctx, tx)
 }

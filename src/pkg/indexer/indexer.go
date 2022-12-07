@@ -3,9 +3,12 @@ package indexer
 import (
 	"context"
 	"crypto/ecdsa"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math/big"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -13,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/google/uuid"
@@ -25,7 +29,9 @@ import (
 
 type Index struct {
 	sync.RWMutex
-	client        *ethclient.Client
+	rpcEndpoint   string
+	ethClient     *ethclient.Client
+	httpClient    *http.Client
 	ehrIndex      *ehrIndexer.EhrIndexer
 	transactOpts  *bind.TransactOpts
 	abi           *abi.ABI
@@ -66,7 +72,7 @@ var (
 	})
 )
 
-func New(contractAddr, keyPath string, client *ethclient.Client, gasTipCap int64) *Index {
+func New(contractAddr, keyPath, endpoint string, gasTipCap int64, httpClient *http.Client, ehtClient *ethclient.Client) *Index {
 	ctx := context.Background()
 
 	key, err := os.ReadFile(keyPath)
@@ -81,14 +87,14 @@ func New(contractAddr, keyPath string, client *ethclient.Client, gasTipCap int64
 
 	signerAddress := crypto.PubkeyToAddress(privateKey.PublicKey)
 
-	chainID, err := client.ChainID(ctx)
+	chainID, err := ehtClient.ChainID(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	address := common.HexToAddress(contractAddr)
 
-	ehrIndex, err := ehrIndexer.NewEhrIndexer(address, client) // shoulbe interface
+	ehrIndex, err := ehrIndexer.NewEhrIndexer(address, ehtClient) // shoulbe interface
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -104,8 +110,13 @@ func New(contractAddr, keyPath string, client *ethclient.Client, gasTipCap int64
 		transactOpts.GasTipCap = big.NewInt(gasTipCap)
 	}
 
+	// Self-processing of the sending will be used for FEVM
+	transactOpts.NoSend = true
+
 	return &Index{
-		client:        client,
+		rpcEndpoint:   endpoint,
+		ethClient:     ehtClient,
+		httpClient:    httpClient,
 		ehrIndex:      ehrIndex,
 		transactOpts:  transactOpts,
 		abi:           bcAbi,
@@ -269,142 +280,45 @@ func (i *Index) SetAllowed(ctx context.Context, address string) (string, error) 
 		return "", fmt.Errorf("ehrIndex.SetAllowed error: %w", err)
 	}
 
-	return tx.Hash().Hex(), nil
+	return i.send(ctx, tx)
 }
 
-/*
-func Init(name string) *Index {
-	if name == "" {
-		log.Fatal("name is empty")
+func (i *Index) send(ctx context.Context, tx *types.Transaction) (string, error) {
+	rawTx, err := tx.MarshalBinary()
+	if err != nil {
+		return "", fmt.Errorf("tx.MarshalBinary error: %w", err)
 	}
 
-	id := sha3.Sum256([]byte(name))
+	reqBody := fmt.Sprintf(`{"jsonrpc":"2.0","method":"eth_sendRawTransaction","params":["0x%x"],"id":1}`, rawTx)
 
-	stor := storage.Storage()
-
-	data, err := stor.Get(&id)
-	if err != nil && !errors.Is(err, errors.ErrIsNotExist) {
-		log.Fatal(err)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, i.rpcEndpoint, strings.NewReader(reqBody))
+	if err != nil {
+		return "", fmt.Errorf("NewRequest error: %w", err)
 	}
 
-	var cache map[string][]byte
-	if errors.Is(err, errors.ErrIsNotExist) {
-		cache = make(map[string][]byte)
-	} else {
-		err = msgpack.Unmarshal(data, &cache)
-		if err != nil {
-			log.Fatal(err)
-		}
+	request.Header.Set("Content-type", "application/json")
+
+	response, err := i.httpClient.Do(request)
+	if err != nil {
+		return "", fmt.Errorf("eth_sendRawTransaction error: %w", err)
+	}
+	defer response.Body.Close()
+
+	data, err := io.ReadAll(response.Body)
+	if err != nil {
+		return "", fmt.Errorf("Response body read error: %w", err)
 	}
 
-	return &Index{
-		id:      &id,
-		name:    name,
-		cache:   cache,
-		storage: stor,
+	if response.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("%w: eth_sendRawTransaction status: %s response: %s", errors.ErrCustom, response.Status, data)
 	}
+
+	var result struct{ Result string }
+
+	err = json.Unmarshal(data, &result)
+	if err != nil {
+		return "", fmt.Errorf("json.Unmarshal error: %w", err)
+	}
+
+	return result.Result, nil
 }
-
-func (i *Index) Add(itemID string, item interface{}) (err error) {
-	i.Lock()
-	defer func() {
-		if err != nil {
-			delete(i.cache, itemID)
-		}
-		i.Unlock()
-	}()
-
-	if _, ok := i.cache[itemID]; ok {
-		return errors.ErrAlreadyExist
-	}
-
-	data, err := msgpack.Marshal(item)
-	if err != nil {
-		return fmt.Errorf("item marshal error: %w", err)
-	}
-
-	i.cache[itemID] = data
-
-	data, err = msgpack.Marshal(i.cache)
-	if err != nil {
-		return fmt.Errorf("cache marshal error: %w", err)
-	}
-
-	if err = i.storage.ReplaceWithID(i.id, data); err != nil {
-		return fmt.Errorf("storage.ReplaceWithID error: %w", err)
-	}
-
-	return nil
-}
-
-func (i *Index) Replace(itemID string, item interface{}) (err error) {
-	i.Lock()
-	defer func() {
-		if err != nil {
-			delete(i.cache, itemID)
-		}
-		i.Unlock()
-	}()
-
-	data, err := msgpack.Marshal(item)
-	if err != nil {
-		return fmt.Errorf("item marshal error: %w", err)
-	}
-
-	i.cache[itemID] = data
-
-	data, err = msgpack.Marshal(i.cache)
-	if err != nil {
-		return err
-	}
-
-	err = i.storage.ReplaceWithID(i.id, data)
-	if err != nil {
-		return fmt.Errorf("storage.ReplaceWithID error: %w", err)
-	}
-
-	return nil
-}
-
-func (i *Index) GetByID(itemID string, dst interface{}) error {
-	i.RLock()
-	item, ok := i.cache[itemID]
-	i.RUnlock()
-
-	if !ok {
-		return errors.ErrIsNotExist
-	}
-
-	if err := msgpack.Unmarshal(item, dst); err != nil {
-		return fmt.Errorf("item unmarshal error: %w", err)
-	}
-
-	return nil
-}
-
-func (i *Index) Delete(itemID string) error {
-	i.Lock()
-	defer i.Unlock()
-
-	item, ok := i.cache[itemID]
-	if !ok {
-		return errors.ErrIsNotExist
-	}
-
-	delete(i.cache, itemID)
-
-	data, err := msgpack.Marshal(i.cache)
-	if err != nil {
-		i.cache[itemID] = item
-		return err
-	}
-
-	err = i.storage.ReplaceWithID(i.id, data)
-	if err != nil {
-		i.cache[itemID] = item
-		return err
-	}
-
-	return nil
-}
-*/

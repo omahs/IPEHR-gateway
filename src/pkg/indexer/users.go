@@ -75,7 +75,7 @@ func (i *Index) UserNew(ctx context.Context, userID, systemID string, role uint8
 		return "", fmt.Errorf("ehrIndex.UserNew error: %w", err)
 	}
 
-	return tx.Hash().Hex(), nil
+	return i.send(ctx, tx)
 }
 
 func (i *Index) GetUserPasswordHash(ctx context.Context, userAddr common.Address) ([]byte, error) {

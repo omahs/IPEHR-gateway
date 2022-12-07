@@ -352,11 +352,7 @@ func registerPatient(user *User, systemID, baseURL string, client *http.Client) 
 	if err != nil {
 		return "", err
 	}
-
-	err = response.Body.Close()
-	if err != nil {
-		return "", err
-	}
+	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusCreated {
 		return "", err

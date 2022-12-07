@@ -58,11 +58,6 @@ func New(cfg *config.Config) *Infra {
 
 	ks := keystore.New(cfg.KeystoreKey)
 
-	ehtClient, err := ethclient.Dial(cfg.Contract.Endpoint)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	ipfsClient, err := ipfs.NewClient(cfg.Storage.Ipfs.EndpointURLs)
 	if err != nil {
 		log.Fatal(err)
@@ -75,18 +70,27 @@ func New(cfg *config.Config) *Infra {
 		log.Fatal(err)
 	}
 
+	ethClient, err := ethclient.Dial(cfg.Contract.Endpoint)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	httpClient := http.DefaultClient
+
 	return &Infra{
 		LocalDB:        db,
 		Keystore:       ks,
-		HTTPClient:     http.DefaultClient,
-		EthClient:      ehtClient,
+		HTTPClient:     httpClient,
+		EthClient:      ethClient,
 		IpfsClient:     ipfsClient,
 		FilecoinClient: filecoinClient,
 		Index: indexer.New(
 			cfg.Contract.Address,
 			cfg.Contract.PrivKeyPath,
-			ehtClient,
+			cfg.Contract.Endpoint,
 			cfg.Contract.GasTipCap,
+			httpClient,
+			ethClient,
 		),
 		LocalStorage:       storage.Storage(),
 		Compressor:         compressor.New(cfg.CompressionLevel),
