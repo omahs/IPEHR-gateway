@@ -6,10 +6,10 @@ package mocks
 
 import (
 	context "context"
-	model "github.com/bsn-si/IPEHR-gateway/src/pkg/docs/model"
-	processing "github.com/bsn-si/IPEHR-gateway/src/pkg/docs/service/processing"
 	reflect "reflect"
 
+	model "github.com/bsn-si/IPEHR-gateway/src/pkg/docs/model"
+	processing "github.com/bsn-si/IPEHR-gateway/src/pkg/docs/service/processing"
 	gomock "github.com/golang/mock/gomock"
 	uuid "github.com/google/uuid"
 )
